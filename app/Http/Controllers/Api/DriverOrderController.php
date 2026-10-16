@@ -23,28 +23,25 @@ class DriverOrderController extends Controller
         );
     }
 
-    /** Toutes les commandes non prises sont proposées à chaque livreur disponible. */
+    /** Les commandes attribuées restent visibles même si le livreur est en course. */
     public function available(Request $request)
     {
-        $driverId = $request->user()->id;
+        $driverId = (int) $request->user()->id;
         $driverProfile = Deliverer::where('user_id', $driverId)->first();
+        if (! $driverProfile) return response()->json(['orders' => []]);
 
-        if (! $driverProfile || $driverProfile->status !== 'disponible') {
-            return response()->json(['orders' => []]);
-        }
-
-        $orders = Order::query()
-            ->where(function ($query) use ($driverId) {
-                $query->where(function ($q) {
+        $query = Order::query()->where(function ($query) use ($driverId, $driverProfile) {
+            $query->where(function ($q) use ($driverId) {
+                $q->where('driver_id', $driverId)->where('status', 'livreur_reserve');
+            });
+            if ($driverProfile->status === 'disponible') {
+                $query->orWhere(function ($q) {
                     $q->whereNull('driver_id')->where('status', 'en_attente');
-                })->orWhere(function ($q) use ($driverId) {
-                    $q->where('driver_id', $driverId)->where('status', 'livreur_reserve');
                 });
-            })
-            ->latest()
-            ->get();
+            }
+        });
 
-        return response()->json(['orders' => $orders]);
+        return response()->json(['orders' => $query->with(['client:id,name,phone', 'items.product'])->latest()->get()]);
     }
 
     private function owns(Request $request, Order $order): bool
@@ -60,8 +57,6 @@ class DriverOrderController extends Controller
 
             $driver = Deliverer::where('user_id', $request->user()->id)->lockForUpdate()->first();
             if (! $driver) return ['ok' => false, 'status' => 404, 'message' => 'Profil livreur introuvable.'];
-            if ($driver->status !== 'disponible') return ['ok' => false, 'status' => 409, 'message' => 'Vous devez être disponible pour accepter une commande.'];
-
             if ($locked->status === 'livreur_reserve') {
                 if ($locked->driver_id !== $request->user()->id) {
                     return ['ok' => false, 'status' => 403, 'message' => 'Cette commande est déjà attribuée à un autre livreur.'];
@@ -74,7 +69,7 @@ class DriverOrderController extends Controller
             }
 
             $hasActive = Order::where('driver_id', $request->user()->id)
-                ->whereNotIn('status', Order::STATUTS_FINAUX)
+                ->whereIn('status', ['livreur_accepte', 'en_cours', 'arrivee_retrait', 'colis_recupere', 'en_livraison'])
                 ->where($locked->getKeyName(), '<>', $locked->id)
                 ->lockForUpdate()
                 ->exists();
@@ -164,8 +159,8 @@ class DriverOrderController extends Controller
         $gross = $this->pricing->grossDeliveryFee($distance);
         $discount = $this->pricing->discountAmount($distance);
         $courseFee = $this->pricing->deliveryFee($distance);
-        $serviceFee = (int) ($order->service_fee ?: PricingService::FRAIS_SERVICE);
-        $total = (int) $order->subtotal + $courseFee + $serviceFee;
+        $serviceFee = 0;
+        $total = (int) $order->subtotal + $courseFee;
 
         DB::transaction(function () use ($request, $order, $completedAt, $distance, $gross, $discount, $courseFee, $serviceFee, $total) {
             $order->update([

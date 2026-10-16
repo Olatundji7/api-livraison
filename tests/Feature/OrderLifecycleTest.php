@@ -22,6 +22,7 @@ class OrderLifecycleTest extends TestCase
             'destination_address' => 'Quartier Zongo',
             'destination_latitude' => 9.3456,
             'destination_longitude' => 2.6210,
+            'note' => 'Livrer la commande au client.',
         ]);
 
         $response->assertStatus(201)->assertJsonPath('order.status', 'en_attente');
@@ -46,6 +47,9 @@ class OrderLifecycleTest extends TestCase
             'pickup_address' => 'Quartier Zongo',
             'pickup_latitude' => 9.3372,
             'pickup_longitude' => 2.6303,
+            'destination_latitude' => 9.3456,
+            'destination_longitude' => 2.6210,
+            'note' => 'Effectuer une course personnelle.',
         ]);
 
         $response->assertStatus(201)->assertJsonPath('order.status', 'en_attente');

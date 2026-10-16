@@ -8,18 +8,12 @@ use Carbon\CarbonInterface;
 
 class PricingService
 {
-    /** Tarif fixe de départ en F CFA. */
-    public const FRAIS_BASE = 500;
+    /** Frais de service supprimés : le client ne paie aucun forfait supplémentaire. */
+    public const FRAIS_SERVICE = 0;
 
-    /** Tarif par kilomètre en F CFA. */
-    public const FRAIS_PAR_KM = 300;
-
-    /** Au-delà de 3 km, réduction de 20 % sur le prix de la course. */
+    /** Réduction appliquée uniquement au-delà de 3 km. */
     public const SEUIL_REDUCTION_KM = 3.0;
     public const TAUX_REDUCTION = 0.20;
-
-    /** Frais MA Livraison facturés au client, utilisés aussi pour absorber FedaPay. */
-    public const FRAIS_SERVICE = 100;
 
     public function distanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
     {
@@ -34,23 +28,25 @@ class PricingService
         return round($earthRadiusKm * $c, 2);
     }
 
-    /** Prix de course avant réduction. */
+    /** Tarif brut selon les tranches convenues, avant la réduction au-delà de 3 km. */
     public function grossDeliveryFee(float $distanceKm): int
     {
-        return (int) round(self::FRAIS_BASE + (self::FRAIS_PAR_KM * max(0, $distanceKm)));
+        $distanceKm = max(0, $distanceKm);
+        if ($distanceKm <= 1.5) return 600;
+        if ($distanceKm <= 2.0) return 700;
+        if ($distanceKm <= 3.0) return 1000;
+
+        return 1000 + (300 * (int) ceil($distanceKm - 3.0));
     }
 
-    /** Montant de la réduction (0 si distance <= 3 km). */
+    /** Réduction de 20 % du tarif brut uniquement au-delà de 3 km. */
     public function discountAmount(float $distanceKm): int
     {
-        if ($distanceKm <= self::SEUIL_REDUCTION_KM) {
-            return 0;
-        }
-
+        if ($distanceKm <= self::SEUIL_REDUCTION_KM) return 0;
         return (int) round($this->grossDeliveryFee($distanceKm) * self::TAUX_REDUCTION);
     }
 
-    /** Prix net de la course après réduction. Les 100 F de service sont séparés. */
+    /** Montant final de la course, sans frais de service. */
     public function deliveryFee(float $distanceKm): int
     {
         return max(0, $this->grossDeliveryFee($distanceKm) - $this->discountAmount($distanceKm));

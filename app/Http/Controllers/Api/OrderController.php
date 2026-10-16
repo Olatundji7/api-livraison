@@ -76,11 +76,11 @@ class OrderController extends Controller
                 'delivery_fee' => $fee,
                 'gross_delivery_fee' => $grossFee,
                 'discount_amount' => $discount,
-                'service_fee' => PricingService::FRAIS_SERVICE,
+                'service_fee' => 0,
                 'fedapay_fee' => 0,
-                'net_service_revenue' => PricingService::FRAIS_SERVICE,
+                'net_service_revenue' => 0,
                 'distance_travelled_km' => 0,
-                'total' => $fee + PricingService::FRAIS_SERVICE,
+                'total' => $fee,
                 'payment_status' => 'non_paye',
             ]);
         });

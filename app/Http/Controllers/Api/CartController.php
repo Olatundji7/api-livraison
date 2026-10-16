@@ -140,7 +140,7 @@ class CartController extends Controller
             $gross = 0;
             $discount = 0;
             $deliveryFee = 0;
-            $serviceFee = PricingService::FRAIS_SERVICE;
+            $serviceFee = 0;
 
             $order = Order::create([
                 'client_id' => $user->id,

@@ -21,6 +21,14 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Accès non autorisé.'], 403);
         }
 
+        if ($order->status !== 'livree') {
+            return response()->json(['message' => 'Le paiement est disponible uniquement après la livraison.'], 409);
+        }
+
+        if ((int) $order->delivery_fee <= 0) {
+            return response()->json(['message' => 'Le montant des frais de livraison est invalide.'], 409);
+        }
+
         if ($order->payment_status === 'paye') {
             return response()->json(['message' => 'Cette commande est déjà payée.'], 409);
         }

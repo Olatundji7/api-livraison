@@ -1,0 +1,25 @@
+MA LIVRAISON — fichiers API corrigés (lot 1)
+
+Ces fichiers sont des remplacements ciblés extraits du projet API fourni.
+Ils ne contiennent pas le projet Laravel complet ni le fichier .env.
+
+Fichiers :
+- app/Services/PricingService.php
+- app/Services/FedaPayService.php
+- app/Http/Controllers/Api/OrderController.php
+- app/Http/Controllers/Api/CartController.php
+- app/Http/Controllers/Api/AdminController.php
+- app/Http/Controllers/Api/DriverOrderController.php
+- app/Http/Controllers/Api/PaymentController.php
+
+Changements :
+- Tarification par tranches : <=1,5 km 600 F ; >1,5 à 2 km 700 F ; >2 à 3 km 1 000 F ; au-delà de 3 km, 1 000 F + 300 F par km entamé, puis réduction de 20 %.
+- Suppression du frais de service fixe de 100 F dans la création de commandes et le calcul final.
+- FedaPay reçoit les frais de livraison uniquement, et l'API refuse de lancer le paiement avant la livraison.
+- L'administrateur peut attribuer une commande à un livreur occupé et lui ajouter une commande à sa file.
+- Le livreur voit ses commandes attribuées même lorsqu'il est occupé, mais le serveur empêche l'acceptation si une autre course est active.
+
+Validation : php -l a réussi sur les 7 fichiers modifiés.
+La suite PHPUnit n'a pas pu être exécutée dans l'environnement de vérification car les extensions PHP DOM, mbstring et xmlwriter sont absentes. Tester dans l'environnement PHP du projet avant mise en production.
+
+IMPORTANT : sauvegarder les fichiers actuels avant remplacement et tester en local. Aucun changement n'a été déployé sur l'hébergement.

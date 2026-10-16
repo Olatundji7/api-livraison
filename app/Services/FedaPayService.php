@@ -27,7 +27,7 @@ class FedaPayService
         $secret = $this->secretKey();
         if ($secret === '') throw new RuntimeException('FedaPay n’est pas configuré. Ajoutez FEDAPAY_SECRET_KEY dans .env.');
 
-        $amount = (int) $order->total;
+        $amount = (int) $order->delivery_fee;
         if ($amount <= 0) throw new RuntimeException('Le montant final de la commande doit être supérieur à 0 FCFA.');
 
         $client = $order->client;
@@ -83,7 +83,6 @@ class FedaPayService
             'metadata' => [
                 'token' => $token,
                 'environment' => env('FEDAPAY_ENV', 'sandbox'),
-                'service_fee_envelope' => PricingService::FRAIS_SERVICE,
             ],
         ]);
     }
@@ -116,15 +115,13 @@ class FedaPayService
         if ($local === 'paid' && $order) {
             $fee = $this->providerFee($data, (int) $payment->amount);
             $merchantNet = max(0, (int) $payment->amount - $fee);
-            $serviceFee = (int) ($order->service_fee ?: PricingService::FRAIS_SERVICE);
-            $netServiceRevenue = max(0, $serviceFee - $fee);
+            $netServiceRevenue = 0;
 
             $payment->update([
                 'fee_amount' => $fee,
                 'merchant_net_amount' => $merchantNet,
                 'metadata' => array_merge($payment->metadata ?? [], [
                     'fee_source' => $this->feeSource($data),
-                    'service_fee_envelope' => $serviceFee,
                     'net_service_revenue' => $netServiceRevenue,
                 ]),
             ]);

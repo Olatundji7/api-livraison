@@ -162,16 +162,12 @@ class AdminController extends Controller
                 return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà terminée.'];
             }
 
-            if ($driver->status !== 'disponible') {
-                return ['ok' => false, 'status' => 409, 'message' => 'Ce livreur n’est pas disponible.'];
+            if ($lockedOrder->driver_id !== null && $lockedOrder->driver_id !== $driver->user_id) {
+                return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà attribuée à un autre livreur.'];
             }
 
-            $hasPendingAssignment = Order::where('driver_id', $driver->user_id)
-                ->whereIn('status', ['livreur_reserve', 'livreur_accepte', 'en_cours', 'arrivee_retrait', 'colis_recupere', 'en_livraison'])
-                ->exists();
-
-            if ($hasPendingAssignment) {
-                return ['ok' => false, 'status' => 409, 'message' => 'Ce livreur a déjà une commande attribuée ou en cours.'];
+            if ($lockedOrder->status !== 'en_attente' && ! ($lockedOrder->status === 'livreur_reserve' && $lockedOrder->driver_id === $driver->user_id)) {
+                return ['ok' => false, 'status' => 409, 'message' => 'Cette commande ne peut pas être attribuée dans son état actuel.'];
             }
 
             $lockedOrder->update([
@@ -187,7 +183,7 @@ class AdminController extends Controller
         }
 
         return response()->json([
-            'message' => 'Commande attribuée au livreur. Elle reste en attente de son acceptation.',
+            'message' => 'Commande ajoutée à la file du livreur. Elle pourra être acceptée lorsqu’il sera disponible.',
             'order' => $result['order'],
         ]);
     }
