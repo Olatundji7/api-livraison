@@ -15,6 +15,7 @@ class Order extends Model
         'destination_address', 'destination_latitude', 'destination_longitude',
         'note', 'subtotal', 'delivery_fee', 'gross_delivery_fee', 'discount_amount',
         'service_fee', 'fedapay_fee', 'net_service_revenue', 'distance_travelled_km',
+        'route_distance_km', 'driver_earnings',
         'total', 'payment_status',
         'accepted_at', 'started_at', 'completed_at', 'cancelled_at',
     ];
@@ -27,6 +28,7 @@ class Order extends Model
             'destination_latitude' => 'float',
             'destination_longitude' => 'float',
             'distance_travelled_km' => 'float',
+            'route_distance_km' => 'float',
             'accepted_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -34,11 +36,16 @@ class Order extends Model
         ];
     }
 
-    protected $appends = ['net_course_amount'];
+    protected $appends = ['net_course_amount', 'driver_earnings_amount'];
 
     public function getNetCourseAmountAttribute(): int
     {
         return (int) $this->delivery_fee;
+    }
+
+    public function getDriverEarningsAmountAttribute(): int
+    {
+        return (int) ($this->driver_earnings ?? $this->gross_delivery_fee ?? 0);
     }
 
     public function client()

@@ -27,6 +27,6 @@ class Product extends Model
 
     public function getImageUrlAttribute(): ?string
     {
-        return $this->image ? (request()->getSchemeAndHttpHost() . '/storage/' . ltrim($this->image, '/')) : null;
+        return $this->image ? url('api/media/' . ltrim($this->image, '/')) : null;
     }
 }

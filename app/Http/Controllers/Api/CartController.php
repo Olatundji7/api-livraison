@@ -162,7 +162,7 @@ class CartController extends Controller
                 'fedapay_fee' => 0,
                 'net_service_revenue' => $serviceFee,
                 'distance_travelled_km' => 0,
-                'total' => $subtotal + $deliveryFee + $serviceFee,
+                'total' => 0,
                 'payment_status' => 'non_paye',
             ]);
 
@@ -185,7 +185,7 @@ class CartController extends Controller
 
         return response()->json([
             'order' => $order,
-            'message' => 'Commande panier créée. Le paiement sera demandé lorsque le livreur marquera la livraison comme terminée.',
+            'message' => 'Commande panier créée. MA Livraison doit valider le prix. Le client devra payer avant que la commande soit visible par les livreurs.',
         ], 201);
     }
 }

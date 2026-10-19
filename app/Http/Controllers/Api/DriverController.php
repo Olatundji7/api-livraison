@@ -73,6 +73,35 @@ class DriverController extends Controller
         return response()->json(['message' => 'Réservation libérée.']);
     }
 
+    /** Profil, gains et historique du livreur connecté (écran « Mon profil livreur »). */
+    public function dashboard(Request $request)
+    {
+        $user = $request->user();
+        $driver = $user->deliverer()->with('user:id,name,phone,email,status')->firstOrFail();
+        $earning = DB::raw('COALESCE(driver_earnings, gross_delivery_fee, 0)');
+
+        $delivered = Order::where('driver_id', $user->id)->where('status', 'livree');
+        $counted = Order::where('driver_id', $user->id)
+            ->where('payment_status', 'paye')
+            ->whereNotIn('status', ['annulee', 'refusee', 'echec']);
+
+        $orders = (clone $delivered)
+            ->latest('completed_at')
+            ->limit(50)
+            ->get(['id', 'destination_address', 'distance_travelled_km', 'driver_earnings', 'gross_delivery_fee', 'completed_at']);
+
+        return response()->json([
+            'driver' => $driver,
+            'stats' => [
+                'completed_count' => (clone $delivered)->count(),
+                'completed_earnings' => (int) (clone $delivered)->sum($earning),
+                'cumulative_earnings' => (int) (clone $counted)->sum($earning),
+                'total_distance_km' => round((float) (clone $delivered)->sum('distance_travelled_km'), 2),
+            ],
+            'orders' => $orders,
+        ]);
+    }
+
     public function updateStatus(Request $request)
     {
         $validator = Validator::make($request->all(), ['status' => ['required', 'in:disponible,hors_ligne']]);
@@ -109,6 +138,15 @@ class DriverController extends Controller
         $lat = (float) $request->input('latitude');
         $lng = (float) $request->input('longitude');
         $driver->update(['latitude' => $lat, 'longitude' => $lng, 'last_location_at' => $now]);
+
+        // Signal de présence : si le livreur n'a pas bougé, on rafraîchit
+        // last_location_at sans empiler des points identiques dans l'historique.
+        $last = DriverLocation::where('driver_id', $driver->user_id)->latest('recorded_at')->first();
+        if ($last && abs($last->latitude - $lat) < 0.000005 && abs($last->longitude - $lng) < 0.000005
+            && $last->recorded_at && abs($last->recorded_at->diffInSeconds($now)) < 120) {
+            return response()->json(['message' => 'Position mise à jour.', 'location' => ['latitude' => $lat, 'longitude' => $lng, 'recorded_at' => $now->toISOString()]]);
+        }
+
         DriverLocation::create([
             'driver_id' => $driver->user_id,
             'latitude' => $lat,

@@ -17,31 +17,35 @@ class DriverOrderController extends Controller
     {
         return response()->json(
             Order::where('driver_id', $request->user()->id)
+                ->where('payment_status', 'paye')
                 ->with(['client:id,name,phone', 'items.product'])
                 ->latest()
                 ->paginate(30)
         );
     }
 
-    /** Les commandes attribuées restent visibles même si le livreur est en course. */
+    /** Toutes les commandes non prises sont proposées à chaque livreur disponible. */
     public function available(Request $request)
     {
-        $driverId = (int) $request->user()->id;
+        $driverId = $request->user()->id;
         $driverProfile = Deliverer::where('user_id', $driverId)->first();
-        if (! $driverProfile) return response()->json(['orders' => []]);
 
-        $query = Order::query()->where(function ($query) use ($driverId, $driverProfile) {
-            $query->where(function ($q) use ($driverId) {
-                $q->where('driver_id', $driverId)->where('status', 'livreur_reserve');
-            });
-            if ($driverProfile->status === 'disponible') {
-                $query->orWhere(function ($q) {
-                    $q->whereNull('driver_id')->where('status', 'en_attente');
+        if (! $driverProfile) {
+            return response()->json(['orders' => []]);
+        }
+
+        $orders = Order::query()
+            ->where(function ($query) use ($driverId) {
+                $query->where(function ($q) {
+                    $q->whereNull('driver_id')->where('status', 'en_attente')->where('payment_status', 'paye');
+                })->orWhere(function ($q) use ($driverId) {
+                    $q->where('driver_id', $driverId)->where('status', 'livreur_reserve')->where('payment_status', 'paye');
                 });
-            }
-        });
+            })
+            ->latest()
+            ->get();
 
-        return response()->json(['orders' => $query->with(['client:id,name,phone', 'items.product'])->latest()->get()]);
+        return response()->json(['orders' => $orders]);
     }
 
     private function owns(Request $request, Order $order): bool
@@ -54,9 +58,12 @@ class DriverOrderController extends Controller
         $result = DB::transaction(function () use ($request, $order) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->first();
             if (! $locked) return ['ok' => false, 'status' => 404, 'message' => 'Commande introuvable.'];
+            if ($locked->payment_status !== 'paye') return ['ok' => false, 'status' => 409, 'message' => 'Le client doit payer la commande avant que vous puissiez l’accepter.'];
 
             $driver = Deliverer::where('user_id', $request->user()->id)->lockForUpdate()->first();
             if (! $driver) return ['ok' => false, 'status' => 404, 'message' => 'Profil livreur introuvable.'];
+            if ($driver->status !== 'disponible') return ['ok' => false, 'status' => 409, 'message' => 'Vous devez être disponible pour accepter une commande.'];
+
             if ($locked->status === 'livreur_reserve') {
                 if ($locked->driver_id !== $request->user()->id) {
                     return ['ok' => false, 'status' => 403, 'message' => 'Cette commande est déjà attribuée à un autre livreur.'];
@@ -69,7 +76,7 @@ class DriverOrderController extends Controller
             }
 
             $hasActive = Order::where('driver_id', $request->user()->id)
-                ->whereIn('status', ['livreur_accepte', 'en_cours', 'arrivee_retrait', 'colis_recupere', 'en_livraison'])
+                ->whereNotIn('status', Order::STATUTS_FINAUX)
                 ->where($locked->getKeyName(), '<>', $locked->id)
                 ->lockForUpdate()
                 ->exists();
@@ -121,6 +128,9 @@ class DriverOrderController extends Controller
         if (! $this->owns($request, $order)) {
             return response()->json(['message' => 'Cette commande ne vous est pas attribuée.'], 403);
         }
+        if ($order->payment_status !== 'paye') {
+            return response()->json(['message' => 'Le client doit payer la commande avant le démarrage de la course.'], 409);
+        }
         if ($order->status !== 'livreur_accepte') {
             return response()->json(['message' => 'La commande doit être acceptée avant de démarrer.'], 409);
         }
@@ -156,22 +166,13 @@ class DriverOrderController extends Controller
                 'message' => 'Distance réelle indisponible. Le livreur doit transmettre au moins deux positions GPS pendant la course avant de clôturer la livraison.',
             ], 409);
         }
-        $gross = $this->pricing->grossDeliveryFee($distance);
-        $discount = $this->pricing->discountAmount($distance);
-        $courseFee = $this->pricing->deliveryFee($distance);
-        $serviceFee = 0;
-        $total = (int) $order->subtotal + $courseFee;
-
-        DB::transaction(function () use ($request, $order, $completedAt, $distance, $gross, $discount, $courseFee, $serviceFee, $total) {
+        DB::transaction(function () use ($request, $order, $completedAt, $distance) {
             $order->update([
                 'status' => 'livree',
                 'completed_at' => $completedAt,
                 'distance_travelled_km' => $distance,
-                'gross_delivery_fee' => $gross,
-                'discount_amount' => $discount,
-                'delivery_fee' => $courseFee,
-                'service_fee' => $serviceFee,
-                'total' => $total,
+                // Les montants financiers ont été figés à la validation admin.
+                // Seule la distance réellement parcourue et le statut changent ici.
             ]);
             Deliverer::where('user_id', $request->user()->id)->update([
                 'status' => 'disponible',
@@ -182,7 +183,7 @@ class DriverOrderController extends Controller
 
         return response()->json([
             'order' => $order->fresh(),
-            'message' => 'Commande marquée comme livrée. Le client peut maintenant procéder au paiement final.',
+            'message' => 'Livraison terminée. Les montants approuvés par l’administrateur ont été conservés.',
             'payment_required' => $order->payment_status !== 'paye',
         ]);
     }

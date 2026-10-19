@@ -15,6 +15,23 @@ class Deliverer extends Model
         'reserved_by', 'reserved_until',
     ];
 
+    protected $appends = ['photo_url'];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        if (! $this->photo) {
+            return null;
+        }
+
+        if (str_starts_with($this->photo, 'http://') || str_starts_with($this->photo, 'https://')) {
+            return $this->photo;
+        }
+
+        // url() se base sur l'hôte réellement appelé par l'application
+        // (et non sur APP_URL). Les images passent par l'API (CORS compris).
+        return url('api/media/' . ltrim($this->photo, '/'));
+    }
+
     protected function casts(): array
     {
         return [

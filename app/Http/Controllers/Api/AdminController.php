@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
@@ -112,6 +113,52 @@ class AdminController extends Controller
         return response()->json(['driver' => $driver->fresh()->load('user:id,name,phone,email,status')]);
     }
 
+    /**
+     * Réinitialise le mot de passe d'un livreur (oubli).
+     * Sans mot de passe fourni, un mot de passe temporaire est généré et
+     * renvoyé UNE seule fois à l'administrateur.
+     */
+    public function resetDriverPassword(Request $request, Deliverer $driver)
+    {
+        $data = Validator::make($request->all(), [
+            'password' => ['nullable', 'string', 'min:6', 'max:100'],
+        ])->validate();
+
+        $generated = empty($data['password']);
+        $password = $generated ? $this->temporaryPassword() : $data['password'];
+
+        $user = $driver->user;
+        $user->password = $password; // haché automatiquement (cast « hashed »)
+        $user->save();
+
+        // Déconnecte le livreur de tous ses appareils.
+        $user->tokens()->delete();
+
+        Log::info('Mot de passe livreur réinitialisé', [
+            'admin_id' => $request->user()->id,
+            'driver_user_id' => $user->id,
+        ]);
+
+        return response()->json(array_filter([
+            'message' => 'Mot de passe réinitialisé.',
+            'generated' => $generated,
+            'password' => $generated ? $password : null,
+        ], static fn ($value) => $value !== null));
+    }
+
+    private function temporaryPassword(int $length = 8): string
+    {
+        // Sans caractères ambigus (0/O, 1/l/I) pour être dicté facilement.
+        $alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $max = strlen($alphabet) - 1;
+        $password = '';
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $alphabet[random_int(0, $max)];
+        }
+
+        return $password;
+    }
+
     public function orders(Request $request)
     {
         $query = Order::with(['client:id,name,phone', 'driver:id,name,phone'])->latest();
@@ -122,20 +169,76 @@ class AdminController extends Controller
 
         $page = $query->paginate(30);
         $page->getCollection()->transform(function (Order $order) {
-            return $order->makeHidden([
-                'subtotal',
-                'total',
-                'gross_delivery_fee',
-                'discount_amount',
-                'service_fee',
-                'fedapay_fee',
-                'net_service_revenue',
-            ]);
+            return $order;
         });
 
         return response()->json($page);
     }
 
+
+    /** Validation admin : prix produit + livraison routière ; le gain livreur est cumulé ici. */
+    public function approveOrder(Request $request, Order $order, \App\Services\PricingService $pricing)
+    {
+        $data = Validator::make($request->all(), [
+            'product_price' => ['nullable', 'integer', 'min:1', 'max:100000000'],
+            'price' => ['nullable', 'integer', 'min:1', 'max:100000000'], // compatibilité ancienne app
+        ])->validate();
+        $productPrice = (int) ($data['product_price'] ?? $data['price'] ?? 0);
+        if ($productPrice < 1) {
+            return response()->json(['message' => 'Le prix du produit est obligatoire.'], 422);
+        }
+        if ($order->destination_latitude === null || $order->destination_longitude === null) {
+            return response()->json(['message' => 'La destination GPS du client est obligatoire pour calculer les frais.'], 422);
+        }
+        try {
+            $routeDistance = $pricing->roadDistanceKm((float) $order->destination_latitude, (float) $order->destination_longitude);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 503);
+        }
+        $gross = $pricing->grossDeliveryFee($routeDistance);
+        $discount = $pricing->discountAmount($routeDistance);
+        $netDelivery = max(0, $gross - $discount);
+        $result = DB::transaction(function () use ($order, $productPrice, $routeDistance, $gross, $discount, $netDelivery) {
+            $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+            if (! $locked) return ['ok' => false, 'status' => 404, 'message' => 'Commande introuvable.'];
+            if ($locked->estTermine()) return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà terminée.'];
+            if ($locked->payment_status === 'paye') return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà payée.'];
+            if ($locked->status !== 'en_attente' || $locked->driver_id !== null) return ['ok' => false, 'status' => 409, 'message' => 'Seule une commande en attente, non attribuée, peut être validée.'];
+
+            $locked->update([
+                'pickup_address' => 'MA Livraison',
+                'pickup_latitude' => 9.3512777053658,
+                'pickup_longitude' => 2.6290550914044717,
+                'route_distance_km' => $routeDistance,
+                'subtotal' => $productPrice,
+                'gross_delivery_fee' => $gross,
+                'discount_amount' => $discount,
+                'delivery_fee' => $netDelivery,
+                'service_fee' => 0,
+                'fedapay_fee' => 0,
+                'net_service_revenue' => 0,
+                'driver_earnings' => $gross,
+                'total' => $productPrice + $netDelivery,
+                'payment_status' => 'non_paye',
+                'status' => 'en_attente',
+            ]);
+            return ['ok' => true, 'order' => $locked->fresh()->load('client:id,name,phone')];
+        });
+        if (! $result['ok']) return response()->json(['message' => $result['message']], $result['status']);
+        return response()->json([
+            'message' => 'Commande validée. Prix produit, frais nets client et gain brut livreur enregistrés.',
+            'order' => $result['order'],
+            'pricing' => [
+                'route_distance_km' => $routeDistance,
+                'product_price' => $productPrice,
+                'gross_delivery_fee' => $gross,
+                'discount_amount' => $discount,
+                'delivery_fee' => $netDelivery,
+                'driver_earnings' => $gross,
+                'total' => $productPrice + $netDelivery,
+            ],
+        ]);
+    }
 
     public function assignOrder(Request $request, Order $order)
     {
@@ -162,12 +265,16 @@ class AdminController extends Controller
                 return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà terminée.'];
             }
 
-            if ($lockedOrder->driver_id !== null && $lockedOrder->driver_id !== $driver->user_id) {
-                return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà attribuée à un autre livreur.'];
+            if ($driver->status !== 'disponible') {
+                return ['ok' => false, 'status' => 409, 'message' => 'Ce livreur n’est pas disponible.'];
             }
 
-            if ($lockedOrder->status !== 'en_attente' && ! ($lockedOrder->status === 'livreur_reserve' && $lockedOrder->driver_id === $driver->user_id)) {
-                return ['ok' => false, 'status' => 409, 'message' => 'Cette commande ne peut pas être attribuée dans son état actuel.'];
+            $hasPendingAssignment = Order::where('driver_id', $driver->user_id)
+                ->whereIn('status', ['livreur_reserve', 'livreur_accepte', 'en_cours', 'arrivee_retrait', 'colis_recupere', 'en_livraison'])
+                ->exists();
+
+            if ($hasPendingAssignment) {
+                return ['ok' => false, 'status' => 409, 'message' => 'Ce livreur a déjà une commande attribuée ou en cours.'];
             }
 
             $lockedOrder->update([
@@ -183,7 +290,7 @@ class AdminController extends Controller
         }
 
         return response()->json([
-            'message' => 'Commande ajoutée à la file du livreur. Elle pourra être acceptée lorsqu’il sera disponible.',
+            'message' => 'Commande attribuée au livreur. Elle reste en attente de son acceptation.',
             'order' => $result['order'],
         ]);
     }
@@ -199,5 +306,22 @@ class AdminController extends Controller
                 ->limit($limit)
                 ->get(),
         ]);
+    }
+
+    public function notifications(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'notifications' => $user->notifications()->latest()->limit(50)->get(['id', 'type', 'data', 'read_at', 'created_at']),
+            'unread_count' => $user->unreadNotifications()->count(),
+        ]);
+    }
+
+    public function markNotificationRead(Request $request, string $notification)
+    {
+        $request->user()->notifications()->where('id', $notification)->firstOrFail()->markAsRead();
+
+        return response()->json(['message' => 'Notification marquée comme lue.']);
     }
 }

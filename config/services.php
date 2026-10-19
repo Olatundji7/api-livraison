@@ -30,11 +30,15 @@ return [
 
 
     'fedapay' => [
-        'secret_key' => env('FEDAPAY_SECRET_KEY'),
-        'base_url' => env('FEDAPAY_API_BASE_URL', 'https://sandbox-api.fedapay.com/v1'),
-        'callback_url' => env('FEDAPAY_CALLBACK_URL'),
-        'fee_rate' => env('FEDAPAY_FEE_RATE', 0.018),
-        'fixed_fee' => env('FEDAPAY_FIXED_FEE', 0),
+    'secret_key' => env('FEDAPAY_SECRET_KEY'),
+    'base_url' => env(
+        'FEDAPAY_API_BASE_URL',
+        'https://sandbox-api.fedapay.com/v1'
+    ),
+    'callback_url' => env('FEDAPAY_CALLBACK_URL'),
+    'environment' => env('FEDAPAY_ENV', 'sandbox'),
+    'fee_rate' => (float) env('FEDAPAY_FEE_RATE', 0.018),
+    'fixed_fee' => (int) env('FEDAPAY_FIXED_FEE', 0),
     ],
 
     'slack' => [

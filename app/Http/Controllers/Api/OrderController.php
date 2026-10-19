@@ -80,7 +80,7 @@ class OrderController extends Controller
                 'fedapay_fee' => 0,
                 'net_service_revenue' => 0,
                 'distance_travelled_km' => 0,
-                'total' => $fee,
+                'total' => 0,
                 'payment_status' => 'non_paye',
             ]);
         });
@@ -93,7 +93,7 @@ class OrderController extends Controller
 
         return response()->json([
             'order' => $order->load('driver:id,name,phone'),
-            'message' => 'Commande enregistrée. Votre demande sera proposée automatiquement aux livreurs disponibles.',
+            'message' => 'Commande enregistrée. MA Livraison doit d’abord valider la demande et fixer le prix. Le paiement sera ensuite requis avant sa mise à disposition des livreurs.',
         ], 201);
     }
 
@@ -159,15 +159,32 @@ class OrderController extends Controller
             return response()->json(['message' => 'Accès non autorisé.'], 403);
         }
 
-        $driver = $order->driver_id ? Deliverer::where('user_id', $order->driver_id)->first() : null;
+        $driver = $order->driver_id
+            ? Deliverer::with('user:id,name,phone')->where('user_id', $order->driver_id)->first()
+            : null;
+
+        // La position n'est partagée que pendant la course.
+        $showLocation = $driver && ! $order->estTermine() && $driver->latitude !== null && $driver->longitude !== null;
 
         return response()->json([
             'order_id' => $order->id,
             'status' => $order->status,
             'distance_travelled_km' => (float) $order->distance_travelled_km,
             'net_course_amount' => (int) $order->delivery_fee,
-            'driver' => $order->driver?->only(['id', 'name', 'phone']),
-            'driver_location' => $driver ? [
+            'destination' => [
+                'address' => $order->destination_address,
+                'latitude' => $order->destination_latitude,
+                'longitude' => $order->destination_longitude,
+            ],
+            'driver' => $driver ? [
+                'id' => $driver->user_id,
+                'name' => $driver->user?->name,
+                'phone' => $driver->user?->phone,
+                'telephone' => $driver->telephone,
+                'photo_url' => $driver->photo_url,
+                'vehicule_type' => $driver->vehicule_type,
+            ] : null,
+            'driver_location' => $showLocation ? [
                 'latitude' => $driver->latitude,
                 'longitude' => $driver->longitude,
                 'last_location_at' => $driver->last_location_at?->toISOString(),

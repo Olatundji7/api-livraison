@@ -5,15 +5,19 @@ use App\Http\Controllers\Api\AdvertisementController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\CartController;
 use Illuminate\Support\Facades\Route;
 
-
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+
+Route::get('/media/{dir}/{file}', [MediaController::class, 'show'])
+    ->where('dir', 'drivers|products|advertisements')
+    ->where('file', '[A-Za-z0-9._-]+');
 
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
@@ -24,20 +28,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
 
-
-    // Recherche et réservation des livreurs
-    Route::middleware('role:client')->group(function () {
-        Route::get('/drivers/available', [DriverController::class, 'available']);
-        Route::get('/drivers/nearby', [DriverController::class, 'nearby']);
-        Route::post('/drivers/{driver}/reserve', [DriverController::class, 'reserve']);
-        Route::delete('/drivers/{driver}/reserve', [DriverController::class, 'releaseReservation']);
-    });
-
-    // Routes dynamiques après les routes fixes
     Route::get('/drivers/{driver}', [DriverController::class, 'show']);
     Route::get('/drivers/{driver}/location', [DriverController::class, 'location']);
     Route::get('/drivers/{driver}/locations', [DriverController::class, 'locations']);
-
 
     Route::middleware('role:client')->group(function () {
         Route::post('/orders', [OrderController::class, 'store']);
@@ -60,6 +53,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('role:driver')->group(function () {
         Route::patch('/driver/status', [DriverController::class, 'updateStatus']);
         Route::post('/driver/location', [DriverController::class, 'updateLocation']);
+        Route::get('/driver/dashboard', [DriverController::class, 'dashboard']);
 
         Route::prefix('driver')->group(function () {
             Route::get('/orders', [DriverOrderController::class, 'index']);
@@ -74,14 +68,16 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware('role:admin')->prefix('admin')->group(function () {
-        Route::get('/notifications', [AdminController::class, 'notifications']);
-        Route::patch('/notifications/{id}/read', [AdminController::class, 'markNotificationAsRead']);
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/notifications', [AdminController::class, 'notifications']);
+        Route::patch('/notifications/{notification}/read', [AdminController::class, 'markNotificationRead']);
         Route::get('/drivers', [AdminController::class, 'drivers']);
         Route::post('/drivers', [AdminController::class, 'storeDriver']);
         Route::put('/drivers/{driver}', [AdminController::class, 'updateDriver']);
+        Route::post('/drivers/{driver}/reset-password', [AdminController::class, 'resetDriverPassword']);
         Route::get('/drivers/{driver}/locations', [AdminController::class, 'driverLocations']);
         Route::get('/orders', [AdminController::class, 'orders']);
+        Route::post('/orders/{order}/approve', [AdminController::class, 'approveOrder']);
         Route::post('/orders/{order}/assign', [AdminController::class, 'assignOrder']);
         Route::get('/products', [ProductController::class, 'adminIndex']);
         Route::post('/products', [ProductController::class, 'store']);
