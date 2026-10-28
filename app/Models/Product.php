@@ -12,6 +12,8 @@ class Product extends Model
 
     protected $fillable = ['name', 'category', 'description', 'price', 'stock', 'image', 'is_active'];
     protected $appends = ['image_url'];
+    // Le stock n'est jamais envoyé aux clients (ni catalogue, ni panier).
+    protected $hidden = ['stock'];
 
     public function orderItems()
     {

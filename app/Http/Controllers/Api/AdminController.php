@@ -161,7 +161,7 @@ class AdminController extends Controller
 
     public function orders(Request $request)
     {
-        $query = Order::with(['client:id,name,phone', 'driver:id,name,phone'])->latest();
+        $query = Order::with(['client:id,name,phone', 'driver:id,name,phone', 'items.product:id,name,price'])->latest();
 
         if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
@@ -175,6 +175,34 @@ class AdminController extends Controller
         return response()->json($page);
     }
 
+
+    /**
+     * Aperçu des frais de livraison AVANT validation : l'administrateur voit les
+     * frais (calculés comme à la validation) séparément du prix de la commande.
+     */
+    public function pricingPreview(Order $order, \App\Services\PricingService $pricing)
+    {
+        if ($order->destination_latitude === null || $order->destination_longitude === null) {
+            return response()->json(['message' => 'La destination GPS du client est manquante : impossible de calculer les frais de livraison.'], 422);
+        }
+
+        try {
+            $distance = $pricing->roadDistanceKm((float) $order->destination_latitude, (float) $order->destination_longitude);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 503);
+        }
+
+        $gross = $pricing->grossDeliveryFee($distance);
+        $discount = $pricing->discountAmount($distance);
+
+        return response()->json(['pricing' => [
+            'route_distance_km' => $distance,
+            'gross_delivery_fee' => $gross,
+            'discount_amount' => $discount,
+            'delivery_fee' => max(0, $gross - $discount),
+            'product_price' => (int) ($order->subtotal ?? 0),
+        ]]);
+    }
 
     /** Validation admin : prix produit + livraison routière ; le gain livreur est cumulé ici. */
     public function approveOrder(Request $request, Order $order, \App\Services\PricingService $pricing)

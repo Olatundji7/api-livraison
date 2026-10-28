@@ -23,6 +23,13 @@ class MediaController extends Controller
 
         abort_unless($disk->exists($path), 404);
 
+        // Sécurité : un octet parasite (retour à la ligne avant « <?php » dans
+        // un fichier du projet) corromprait l'image. On vide les tampons de
+        // sortie avant d'envoyer le fichier.
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
         return $disk->response($path, null, ['Cache-Control' => 'public, max-age=86400']);
     }
 }

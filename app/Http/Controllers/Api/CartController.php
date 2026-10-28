@@ -56,9 +56,6 @@ class CartController extends Controller
         $cart = $this->cartFor($request);
         $item = $cart->items()->firstOrNew(['product_id' => $product->id]);
         $newQuantity = (int) ($item->exists ? $item->quantity : 0) + (int) $data['quantity'];
-        if ($newQuantity > $product->stock) {
-            return response()->json(['message' => 'Stock insuffisant pour ce produit.'], 422);
-        }
         $item->quantity = $newQuantity;
         $item->save();
         return response()->json($this->payload($cart));
@@ -72,9 +69,6 @@ class CartController extends Controller
         }
         $data = Validator::make($request->all(), ['quantity' => ['required', 'integer', 'min:1', 'max:100']])->validate();
         $product = $item->product;
-        if ((int) $data['quantity'] > $product->stock) {
-            return response()->json(['message' => 'Stock insuffisant pour ce produit.'], 422);
-        }
         $item->update(['quantity' => $data['quantity']]);
         return response()->json($this->payload($cart));
     }
@@ -127,8 +121,8 @@ class CartController extends Controller
             $lines = [];
             foreach ($cart->items as $item) {
                 $product = Product::lockForUpdate()->findOrFail($item->product_id);
-                if (! $product->is_active || $product->stock < $item->quantity) {
-                    throw new \RuntimeException("Stock insuffisant pour {$product->name}.");
+                if (! $product->is_active) {
+                    throw new \RuntimeException("Le produit {$product->name} n'est plus disponible.");
                 }
                 $lineTotal = (int) $product->price * (int) $item->quantity;
                 $subtotal += $lineTotal;
@@ -167,7 +161,6 @@ class CartController extends Controller
             ]);
 
             foreach ($lines as $line) {
-                $line['product']->decrement('stock', $line['quantity']);
                 OrderItem::create([
                     'order_id' => $order->id,
                     'product_id' => $line['product']->id,

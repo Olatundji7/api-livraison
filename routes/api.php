@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\RoutingController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PaymentController;
@@ -14,6 +16,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/auth/forgot-password', [PasswordResetController::class, 'forgot'])->middleware('throttle:5,1');
+Route::post('/auth/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:10,1');
 
 Route::get('/media/{dir}/{file}', [MediaController::class, 'show'])
     ->where('dir', 'drivers|products|advertisements')
@@ -69,6 +73,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:admin')->prefix('admin')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/route', [RoutingController::class, 'route'])->middleware('throttle:120,1');
+        Route::post('/route/match', [RoutingController::class, 'match'])->middleware('throttle:60,1');
         Route::get('/notifications', [AdminController::class, 'notifications']);
         Route::patch('/notifications/{notification}/read', [AdminController::class, 'markNotificationRead']);
         Route::get('/drivers', [AdminController::class, 'drivers']);
@@ -77,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/drivers/{driver}/reset-password', [AdminController::class, 'resetDriverPassword']);
         Route::get('/drivers/{driver}/locations', [AdminController::class, 'driverLocations']);
         Route::get('/orders', [AdminController::class, 'orders']);
+        Route::get('/orders/{order}/pricing-preview', [AdminController::class, 'pricingPreview']);
         Route::post('/orders/{order}/approve', [AdminController::class, 'approveOrder']);
         Route::post('/orders/{order}/assign', [AdminController::class, 'assignOrder']);
         Route::get('/products', [ProductController::class, 'adminIndex']);

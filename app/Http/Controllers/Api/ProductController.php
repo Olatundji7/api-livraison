@@ -60,7 +60,6 @@ class ProductController extends Controller
             'category' => ['nullable', 'string', 'max:100'],
             'description' => ['nullable', 'string'],
             'price' => ['required', 'integer', 'min:0'],
-            'stock' => ['required', 'integer', 'min:0'],
             'is_active' => ['sometimes', 'boolean'],
             'image' => ['nullable', 'image', 'max:4096'],
         ])->validate();
