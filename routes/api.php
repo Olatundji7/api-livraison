@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RoutingController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
@@ -31,6 +32,8 @@ Route::post('/payments/webhook/fedapay', [PaymentController::class, 'webhook']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::put('/auth/profile', [ProfileController::class, 'update'])->middleware('throttle:20,1');
+    Route::put('/auth/password', [ProfileController::class, 'password'])->middleware('throttle:10,1');
 
     Route::get('/drivers/{driver}', [DriverController::class, 'show']);
     Route::get('/drivers/{driver}/location', [DriverController::class, 'location']);
