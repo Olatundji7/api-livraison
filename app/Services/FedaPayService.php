@@ -189,6 +189,7 @@ class FedaPayService
             'declined', 'failed', 'failure' => 'failed',
             default => 'pending',
         };
+        $wasAlreadyPaid = $payment->status === 'paid';
 
         $payment->update([
             'status' => $local,
@@ -227,6 +228,22 @@ class FedaPayService
                 'fedapay_fee' => $fee,
                 'net_service_revenue' => $netServiceRevenue,
             ]);
+
+            if (! $wasAlreadyPaid) {
+                \App\Models\Deliverer::with('user')
+                    ->where('status', 'disponible')
+                    ->get()
+                    ->each(function ($driver) use ($order) {
+                        if ($driver->user) {
+                            app(\App\Services\FcmService::class)->sendToUser(
+                                $driver->user,
+                                'Nouvelle course disponible',
+                                'La commande n°'.$order->id.' est payée et disponible.',
+                                ['type' => 'available_order', 'order_id' => (string) $order->id]
+                            );
+                        }
+                    });
+            }
         } elseif ($local === 'failed' || $local === 'cancelled') {
             $payment->order()->update(['payment_status' => 'echoue']);
         }

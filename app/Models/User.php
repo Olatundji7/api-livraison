@@ -23,6 +23,11 @@ class User extends Authenticatable
         ];
     }
 
+    public function fcmTokens()
+    {
+        return $this->hasMany(FcmToken::class);
+    }
+
     public function deliverer()
     {
         return $this->hasOne(Deliverer::class);

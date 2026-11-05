@@ -16,6 +16,8 @@ return [
 
     'firebase' => [
         'web_api_key' => env('FIREBASE_WEB_API_KEY'),
+        'project_id' => env('FIREBASE_PROJECT_ID', 'ma-livraison-43517'),
+        'credentials' => env('FIREBASE_CREDENTIALS'),
     ],
 
     'postmark' => [

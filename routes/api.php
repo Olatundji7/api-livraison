@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\FcmTokenController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/register', [AuthController::class, 'register']);
@@ -31,6 +32,8 @@ Route::get('/advertisements', [AdvertisementController::class, 'index']);
 Route::post('/payments/webhook/fedapay', [PaymentController::class, 'webhook']);
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/fcm-tokens', [FcmTokenController::class, 'store']);
+    Route::delete('/fcm-tokens', [FcmTokenController::class, 'destroy']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::put('/auth/profile', [ProfileController::class, 'update'])->middleware('throttle:20,1');

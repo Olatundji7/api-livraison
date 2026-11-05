@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Deliverer;
 use App\Models\Order;
+use App\Models\User;
 use App\Services\PricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -101,6 +102,9 @@ class DriverOrderController extends Controller
             return response()->json(['message' => $result['message']], $result['status']);
         }
 
+        $client = User::find($result['order']->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Livreur confirmé', 'Un livreur a accepté votre commande n°'.$result['order']->id.'.', ['type' => 'order_accepted', 'order_id' => (string) $result['order']->id]);
+
         return response()->json([
             'order' => $result['order'],
             'message' => 'Commande acceptée. Vous pouvez maintenant suivre la position du client et démarrer la course.',
@@ -135,6 +139,8 @@ class DriverOrderController extends Controller
             return response()->json(['message' => 'La commande doit être acceptée avant de démarrer.'], 409);
         }
         $order->update(['status' => 'en_cours', 'started_at' => now()]);
+        $client = User::find($order->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Course démarrée', 'Votre commande n°'.$order->id.' est en cours.', ['type' => 'order_started', 'order_id' => (string) $order->id]);
         return response()->json(['order' => $order->fresh()]);
     }
 
@@ -147,6 +153,8 @@ class DriverOrderController extends Controller
             return response()->json(['message' => 'Le retrait n’est pas possible dans cet état.'], 409);
         }
         $order->update(['status' => 'colis_recupere']);
+        $client = User::find($order->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Colis récupéré', 'Le livreur a récupéré votre colis pour la commande n°'.$order->id.'.', ['type' => 'order_picked_up', 'order_id' => (string) $order->id]);
         return response()->json(['order' => $order->fresh()]);
     }
 
@@ -181,6 +189,9 @@ class DriverOrderController extends Controller
             ]);
         });
 
+        $client = User::find($order->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Commande livrée', 'Votre commande n°'.$order->id.' a été livrée.', ['type' => 'order_delivered', 'order_id' => (string) $order->id]);
+
         return response()->json([
             'order' => $order->fresh(),
             'message' => 'Livraison terminée. Les montants approuvés par l’administrateur ont été conservés.',
@@ -206,6 +217,8 @@ class DriverOrderController extends Controller
             ]);
         });
 
+        $client = User::find($order->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Commande annulée', 'La commande n°'.$order->id.' a été annulée.', ['type' => 'order_cancelled', 'order_id' => (string) $order->id]);
         return response()->json(['order' => $order->fresh()]);
     }
 }

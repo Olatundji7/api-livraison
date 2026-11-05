@@ -91,6 +91,15 @@ class OrderController extends Controller
             ], 409);
         }
 
+        \App\Models\User::where('role', 'admin')->get()->each(function ($admin) use ($order) {
+            app(\App\Services\FcmService::class)->sendToUser(
+                $admin,
+                'Nouvelle commande MA Livraison',
+                'Une nouvelle commande n°'.$order->id.' attend votre validation.',
+                ['type' => 'new_order', 'order_id' => (string) $order->id]
+            );
+        });
+
         return response()->json([
             'order' => $order->load('driver:id,name,phone'),
             'message' => 'Commande enregistrée. MA Livraison doit d’abord valider la demande et fixer le prix. Le paiement sera ensuite requis avant sa mise à disposition des livreurs.',

@@ -848,6 +848,8 @@
     'firebase' => 
     array (
       'web_api_key' => 'AIzaSyAvIjK4Xj9KpvgZ_7UD7StCTZ-0gtWNhjo',
+      'project_id' => 'ma-livraison-43517',
+      'credentials' => '/home/olatundji/api-livraison-ma3h/storage/app/private/service-account.json',
     ),
     'fedapay' => 
     array (

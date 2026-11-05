@@ -73,29 +73,23 @@ class DriverController extends Controller
         return response()->json(['message' => 'Réservation libérée.']);
     }
 
-    /** Profil, gains et historique du livreur connecté (écran « Mon profil livreur »). */
+    /** Profil et historique des livraisons du livreur connecté. */
     public function dashboard(Request $request)
     {
         $user = $request->user();
         $driver = $user->deliverer()->with('user:id,name,phone,email,status')->firstOrFail();
-        $earning = DB::raw('COALESCE(driver_earnings, gross_delivery_fee, 0)');
 
         $delivered = Order::where('driver_id', $user->id)->where('status', 'livree');
-        $counted = Order::where('driver_id', $user->id)
-            ->where('payment_status', 'paye')
-            ->whereNotIn('status', ['annulee', 'refusee', 'echec']);
 
         $orders = (clone $delivered)
             ->latest('completed_at')
             ->limit(50)
-            ->get(['id', 'destination_address', 'distance_travelled_km', 'driver_earnings', 'gross_delivery_fee', 'completed_at']);
+            ->get(['id', 'destination_address', 'distance_travelled_km', 'completed_at']);
 
         return response()->json([
             'driver' => $driver,
             'stats' => [
                 'completed_count' => (clone $delivered)->count(),
-                'completed_earnings' => (int) (clone $delivered)->sum($earning),
-                'cumulative_earnings' => (int) (clone $counted)->sum($earning),
                 'total_distance_km' => round((float) (clone $delivered)->sum('distance_travelled_km'), 2),
             ],
             'orders' => $orders,

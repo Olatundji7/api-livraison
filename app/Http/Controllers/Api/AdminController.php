@@ -253,6 +253,9 @@ class AdminController extends Controller
             return ['ok' => true, 'order' => $locked->fresh()->load('client:id,name,phone')];
         });
         if (! $result['ok']) return response()->json(['message' => $result['message']], $result['status']);
+        $client = $result['order']->client ?? User::find($result['order']->client_id);
+        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Commande validée', 'Votre commande n°'.$result['order']->id.' est validée. Vous pouvez procéder au paiement.', ['type' => 'order_approved', 'order_id' => (string) $result['order']->id]);
+
         return response()->json([
             'message' => 'Commande validée. Prix produit, frais nets client et gain brut livreur enregistrés.',
             'order' => $result['order'],
@@ -315,6 +318,16 @@ class AdminController extends Controller
 
         if (! $result['ok']) {
             return response()->json(['message' => $result['message']], $result['status']);
+        }
+
+        $assignedDriver = Deliverer::with('user')->find($request->integer('driver_id'));
+        if ($assignedDriver?->user) {
+            app(\App\Services\FcmService::class)->sendToUser(
+                $assignedDriver->user,
+                'Course attribuée',
+                'La commande n°'.$result['order']->id.' vous a été attribuée.',
+                ['type' => 'assigned_order', 'order_id' => (string) $result['order']->id]
+            );
         }
 
         return response()->json([
