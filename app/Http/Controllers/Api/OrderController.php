@@ -91,14 +91,40 @@ class OrderController extends Controller
             ], 409);
         }
 
-        \App\Models\User::where('role', 'admin')->get()->each(function ($admin) use ($order) {
-            app(\App\Services\FcmService::class)->sendToUser(
-                $admin,
-                'Nouvelle commande MA Livraison',
-                'Une nouvelle commande n°'.$order->id.' attend votre validation.',
-                ['type' => 'new_order', 'order_id' => (string) $order->id]
-            );
-        });
+        // Enregistre une notification persistante pour la cloche admin.
+        // Le push FCM est complémentaire : l'historique reste disponible même
+        // si le navigateur n'a pas encore réussi à enregistrer son jeton FCM.
+        try {
+            \App\Models\User::where('role', 'admin')->get()->each(function ($admin) use ($order, $user) {
+                $title = 'Nouvelle commande MA Livraison';
+                $message = 'La commande n°'.$order->id.' de '.$user->name.' attend votre validation.';
+                $payload = [
+                    'title' => $title,
+                    'message' => $message,
+                    'event' => 'new_order',
+                    'order_id' => (int) $order->id,
+                    'client_id' => (int) $user->id,
+                ];
+
+                $admin->notifications()->create([
+                    'id' => (string) \Illuminate\Support\Str::uuid(),
+                    'type' => 'ma_livraison.order.created',
+                    'data' => $payload,
+                ]);
+
+                app(\App\Services\FcmService::class)->sendToUser(
+                    $admin,
+                    $title,
+                    $message,
+                    ['type' => 'new_order', 'order_id' => (string) $order->id]
+                );
+            });
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Notification de nouvelle commande non enregistrée', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'order' => $order->load('driver:id,name,phone'),

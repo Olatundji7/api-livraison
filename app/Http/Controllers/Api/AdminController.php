@@ -161,7 +161,7 @@ class AdminController extends Controller
 
     public function orders(Request $request)
     {
-        $query = Order::with(['client:id,name,phone', 'driver:id,name,phone', 'items.product:id,name,price'])->latest();
+        $query = Order::with(['client:id,name,phone', 'driver:id,name,phone'])->latest();
 
         if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
@@ -176,12 +176,13 @@ class AdminController extends Controller
     }
 
 
-    /**
-     * Aperçu des frais de livraison AVANT validation : l'administrateur voit les
-     * frais (calculés comme à la validation) séparément du prix de la commande.
-     */
+    /** Aperçu du tarif routier automatique avant la confirmation par l'administrateur. */
     public function pricingPreview(Order $order, \App\Services\PricingService $pricing)
     {
+        if ($order->status !== 'en_attente' || $order->driver_id !== null || $order->payment_status === 'paye') {
+            return response()->json(['message' => 'Cette commande ne peut plus être tarifée avant validation.'], 409);
+        }
+
         if ($order->destination_latitude === null || $order->destination_longitude === null) {
             return response()->json(['message' => 'La destination GPS du client est manquante : impossible de calculer les frais de livraison.'], 422);
         }
@@ -204,12 +205,13 @@ class AdminController extends Controller
         ]]);
     }
 
-    /** Validation admin : prix produit + livraison routière ; le gain livreur est cumulé ici. */
+    /** Validation admin : prix produit et frais de livraison ajustables avant confirmation. */
     public function approveOrder(Request $request, Order $order, \App\Services\PricingService $pricing)
     {
         $data = Validator::make($request->all(), [
             'product_price' => ['nullable', 'integer', 'min:1', 'max:100000000'],
             'price' => ['nullable', 'integer', 'min:1', 'max:100000000'], // compatibilité ancienne app
+            'delivery_fee' => ['sometimes', 'integer', 'min:0', 'max:100000000'], // montant final saisi par l'administrateur
         ])->validate();
         $productPrice = (int) ($data['product_price'] ?? $data['price'] ?? 0);
         if ($productPrice < 1) {
@@ -225,8 +227,12 @@ class AdminController extends Controller
         }
         $gross = $pricing->grossDeliveryFee($routeDistance);
         $discount = $pricing->discountAmount($routeDistance);
-        $netDelivery = max(0, $gross - $discount);
-        $result = DB::transaction(function () use ($order, $productPrice, $routeDistance, $gross, $discount, $netDelivery) {
+        $calculatedDeliveryFee = max(0, $gross - $discount);
+        $finalDeliveryFee = array_key_exists('delivery_fee', $data)
+            ? (int) $data['delivery_fee']
+            : $calculatedDeliveryFee;
+
+        $result = DB::transaction(function () use ($order, $productPrice, $routeDistance, $gross, $discount, $calculatedDeliveryFee, $finalDeliveryFee) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->first();
             if (! $locked) return ['ok' => false, 'status' => 404, 'message' => 'Commande introuvable.'];
             if ($locked->estTermine()) return ['ok' => false, 'status' => 409, 'message' => 'Cette commande est déjà terminée.'];
@@ -241,32 +247,31 @@ class AdminController extends Controller
                 'subtotal' => $productPrice,
                 'gross_delivery_fee' => $gross,
                 'discount_amount' => $discount,
-                'delivery_fee' => $netDelivery,
+                'delivery_fee' => $finalDeliveryFee,
                 'service_fee' => 0,
                 'fedapay_fee' => 0,
                 'net_service_revenue' => 0,
                 'driver_earnings' => $gross,
-                'total' => $productPrice + $netDelivery,
+                'total' => $productPrice + $finalDeliveryFee,
                 'payment_status' => 'non_paye',
                 'status' => 'en_attente',
             ]);
             return ['ok' => true, 'order' => $locked->fresh()->load('client:id,name,phone')];
         });
         if (! $result['ok']) return response()->json(['message' => $result['message']], $result['status']);
-        $client = $result['order']->client ?? User::find($result['order']->client_id);
-        if ($client) app(\App\Services\FcmService::class)->sendToUser($client, 'Commande validée', 'Votre commande n°'.$result['order']->id.' est validée. Vous pouvez procéder au paiement.', ['type' => 'order_approved', 'order_id' => (string) $result['order']->id]);
-
         return response()->json([
-            'message' => 'Commande validée. Prix produit, frais nets client et gain brut livreur enregistrés.',
+            'message' => 'Commande validée. Prix du produit et frais de livraison approuvés par l’administrateur enregistrés.',
             'order' => $result['order'],
             'pricing' => [
                 'route_distance_km' => $routeDistance,
                 'product_price' => $productPrice,
                 'gross_delivery_fee' => $gross,
                 'discount_amount' => $discount,
-                'delivery_fee' => $netDelivery,
+                'delivery_fee' => $finalDeliveryFee,
+                'calculated_delivery_fee' => $calculatedDeliveryFee,
+                'delivery_fee_adjustment' => $finalDeliveryFee - $calculatedDeliveryFee,
                 'driver_earnings' => $gross,
-                'total' => $productPrice + $netDelivery,
+                'total' => $productPrice + $finalDeliveryFee,
             ],
         ]);
     }
@@ -318,16 +323,6 @@ class AdminController extends Controller
 
         if (! $result['ok']) {
             return response()->json(['message' => $result['message']], $result['status']);
-        }
-
-        $assignedDriver = Deliverer::with('user')->find($request->integer('driver_id'));
-        if ($assignedDriver?->user) {
-            app(\App\Services\FcmService::class)->sendToUser(
-                $assignedDriver->user,
-                'Course attribuée',
-                'La commande n°'.$result['order']->id.' vous a été attribuée.',
-                ['type' => 'assigned_order', 'order_id' => (string) $result['order']->id]
-            );
         }
 
         return response()->json([

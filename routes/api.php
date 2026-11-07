@@ -6,21 +6,14 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverOrderController;
 use App\Http\Controllers\Api\MediaController;
-use App\Http\Controllers\Api\PasswordResetController;
-use App\Http\Controllers\Api\ProfileController;
-use App\Http\Controllers\Api\RoutingController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\CartController;
-use App\Http\Controllers\Api\FcmTokenController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/google', [AuthController::class, 'google'])->middleware('throttle:10,1');
-Route::post('/auth/forgot-password', [PasswordResetController::class, 'forgot'])->middleware('throttle:5,1');
-Route::post('/auth/reset-password', [PasswordResetController::class, 'reset'])->middleware('throttle:10,1');
 
 Route::get('/media/{dir}/{file}', [MediaController::class, 'show'])
     ->where('dir', 'drivers|products|advertisements')
@@ -32,12 +25,8 @@ Route::get('/advertisements', [AdvertisementController::class, 'index']);
 Route::post('/payments/webhook/fedapay', [PaymentController::class, 'webhook']);
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/fcm-tokens', [FcmTokenController::class, 'store']);
-    Route::delete('/fcm-tokens', [FcmTokenController::class, 'destroy']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::get('/auth/me', [AuthController::class, 'me']);
-    Route::put('/auth/profile', [ProfileController::class, 'update'])->middleware('throttle:20,1');
-    Route::put('/auth/password', [ProfileController::class, 'password'])->middleware('throttle:10,1');
 
     Route::get('/drivers/{driver}', [DriverController::class, 'show']);
     Route::get('/drivers/{driver}/location', [DriverController::class, 'location']);
@@ -80,8 +69,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::middleware('role:admin')->prefix('admin')->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
-        Route::get('/route', [RoutingController::class, 'route'])->middleware('throttle:120,1');
-        Route::post('/route/match', [RoutingController::class, 'match'])->middleware('throttle:60,1');
         Route::get('/notifications', [AdminController::class, 'notifications']);
         Route::patch('/notifications/{notification}/read', [AdminController::class, 'markNotificationRead']);
         Route::get('/drivers', [AdminController::class, 'drivers']);
@@ -97,6 +84,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/products', [ProductController::class, 'store']);
         Route::put('/products/{product}', [ProductController::class, 'update']);
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+        Route::get('/advertisement-partners', [AdvertisementController::class, 'partners']);
+        Route::post('/advertisement-partners', [AdvertisementController::class, 'storePartner']);
         Route::get('/advertisements', [AdvertisementController::class, 'adminIndex']);
         Route::post('/advertisements', [AdvertisementController::class, 'store']);
         Route::put('/advertisements/{advertisement}', [AdvertisementController::class, 'update']);

@@ -230,6 +230,49 @@ class FedaPayService
             ]);
 
             if (! $wasAlreadyPaid) {
+                // Notification persistante dans la cloche de l'administration.
+                // Le contrôle $wasAlreadyPaid évite les doublons lorsque le
+                // statut est relu plusieurs fois par le webhook ou l'application.
+                try {
+                    \App\Models\User::where('role', 'admin')->get()->each(function ($admin) use ($order, $payment) {
+                        $amount = number_format((int) $payment->amount, 0, ',', ' ');
+                        $title = 'Paiement confirmé';
+                        $message = 'Le paiement de la commande n°'.$order->id.' ('.$amount.' FCFA) a été confirmé.';
+                        $payload = [
+                            'title' => $title,
+                            'message' => $message,
+                            'event' => 'payment_confirmed',
+                            'order_id' => (int) $order->id,
+                            'payment_reference' => (string) $payment->reference,
+                            'amount' => (int) $payment->amount,
+                        ];
+
+                        $admin->notifications()->create([
+                            'id' => (string) \Illuminate\Support\Str::uuid(),
+                            'type' => 'ma_livraison.payment.confirmed',
+                            'data' => $payload,
+                        ]);
+
+                        app(\App\Services\FcmService::class)->sendToUser(
+                            $admin,
+                            $title,
+                            $message,
+                            [
+                                'type' => 'payment_confirmed',
+                                'order_id' => (string) $order->id,
+                                'payment_reference' => (string) $payment->reference,
+                            ]
+                        );
+                    });
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Notification de paiement confirmé non enregistrée', [
+                        'order_id' => $order->id,
+                        'payment_reference' => $payment->reference,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                // Les livreurs disponibles sont aussi prévenus qu'une course est ouverte.
                 \App\Models\Deliverer::with('user')
                     ->where('status', 'disponible')
                     ->get()
